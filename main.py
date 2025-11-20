@@ -37,8 +37,8 @@ if not OPENAI_API_KEY:
 
 openai_client = AsyncOpenAI(
     api_key=OPENAI_API_KEY,
-    timeout=180.0,
-    max_retries=0
+    timeout=300.0,
+    max_retries=2
 )
 
 
@@ -111,42 +111,70 @@ async def retrieve_text(whisper_hash: str) -> str:
 
 async def parse_invoice_items(extracted_text: str) -> dict:
     """Parse extracted text using LLM to identify structured invoice line items"""
-    print(f"[OpenAI] Starting LLM parsing (text length: {len(extracted_text)} chars)...")
+    estimated_tokens = len(extracted_text) // 4
+    print(f"[OpenAI] Starting LLM parsing (text length: {len(extracted_text)} chars, ~{estimated_tokens} tokens)...")
     
     system_prompt = """You are an invoice data extraction specialist. Extract all line items from the invoice text and return them in valid JSON format.
 
+IMPORTANT: Always include ALL fields in the response. If a field is not found, set it to null.
+
 For each line item, extract:
-- description: item description
-- quantity: numeric quantity
-- unit: unit of measure (Ea, lbs, etc)
-- unit_price: price per unit as a number
-- total_price: total price as a number
-- country: country code if present
+- product_number: product/part/model number (null if not found)
+- description: item description (null if not found)
+- quantity: numeric quantity (null if not found)
+- unit: unit of measure like Ea, lbs, etc (null if not found)
+- unit_price: price per unit as a number (null if not found)
+- total_price: total price as a number (null if not found)
+- country: country code (null if not found)
+- supplier: supplier/vendor name for this line item (null if not found)
+- po_number: purchase order number for this line item (null if not found)
+- manufacturer: manufacturer name, often labeled as MF (null if not found)
+- mpn: manufacturer part number, often labeled as MPN (null if not found)
+- serial_number: serial number, often labeled as SN (null if not found)
 
-Also extract invoice-level data:
-- subtotal
-- freight_charges
-- total
-- currency
+Also extract invoice-level data (use null if not found):
+- invoice_number: invoice number
+- invoice_date: invoice date
+- subtotal: subtotal amount
+- freight_charges: freight/shipping charges
+- total: total amount
+- currency: currency code
 
-Return ONLY valid JSON, no markdown or explanations."""
+Return ONLY valid JSON with ALL fields present, no markdown or explanations."""
 
     user_prompt = f"""Extract all line items and totals from this invoice:
 
 {extracted_text}
 
-Return as JSON with this structure:
+Return as JSON with this EXACT structure. Include ALL fields for every line item. Use null for any field not found:
 {{
   "line_items": [
-    {{"description": "...", "quantity": 1, "unit": "Ea", "unit_price": 1.25, "total_price": 1.25, "country": "US"}}
+    {{
+      "product_number": "..." or null,
+      "description": "..." or null,
+      "quantity": 1 or null,
+      "unit": "Ea" or null,
+      "unit_price": 1.25 or null,
+      "total_price": 1.25 or null,
+      "country": "US" or null,
+      "supplier": "..." or null,
+      "po_number": "..." or null,
+      "manufacturer": "..." or null,
+      "mpn": "..." or null,
+      "serial_number": "..." or null
+    }}
   ],
   "invoice_summary": {{
-    "subtotal": 21677.74,
-    "freight_charges": 0,
-    "total": 21677.74,
-    "currency": "USD"
+    "invoice_number": "..." or null,
+    "invoice_date": "..." or null,
+    "subtotal": 21677.74 or null,
+    "freight_charges": 0 or null,
+    "total": 21677.74 or null,
+    "currency": "USD" or null
   }}
-}}"""
+}}
+
+Remember: ALL fields must be present in every object. Use null for missing values."""
 
     print(f"[OpenAI] Sending request to OpenAI API (model: gpt-4o)...")
     sys.stdout.flush()
@@ -164,7 +192,7 @@ Return as JSON with this structure:
             ],
             temperature=0,
             response_format={"type": "json_object"},
-            timeout=180.0
+            timeout=300.0
         )
         elapsed = time.time() - start_time
         print(f"[OpenAI] ✓ Received response from OpenAI API (took {elapsed:.2f}s)")
@@ -173,14 +201,24 @@ Return as JSON with this structure:
         print(f"[OpenAI] ✗ TIMEOUT after {elapsed:.2f}s: {str(e)}")
         raise HTTPException(
             status_code=504,
-            detail=f"OpenAI API timeout after {elapsed:.2f}s"
+            detail=f"OpenAI API timeout after {elapsed:.2f}s. The document may be too large to process in time."
         )
     except Exception as e:
         elapsed = time.time() - start_time
-        print(f"[OpenAI] ✗ ERROR after {elapsed:.2f}s: {type(e).__name__}: {str(e)}")
+        error_msg = str(e)
+        
+        if "502" in error_msg or "Bad Gateway" in error_msg:
+            print(f"[OpenAI] ✗ 502 Bad Gateway after {elapsed:.2f}s - OpenAI service issue or timeout")
+            print(f"[OpenAI] This is typically a temporary issue. Will retry automatically...")
+            raise HTTPException(
+                status_code=502,
+                detail="OpenAI service temporarily unavailable (502 Bad Gateway). This may be a temporary issue - please try again."
+            )
+        
+        print(f"[OpenAI] ✗ ERROR after {elapsed:.2f}s: {type(e).__name__}: {str(e)[:200]}")
         raise HTTPException(
             status_code=500,
-            detail=f"OpenAI API error: {str(e)}"
+            detail=f"OpenAI API error: {type(e).__name__} - {str(e)[:100]}"
         )
     
     print(f"[OpenAI] LLM parsing complete")
