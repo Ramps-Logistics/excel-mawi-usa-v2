@@ -5,6 +5,7 @@ import json
 import time
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -12,6 +13,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI(title="LLMWhisperer Invoice Extractor")
+
+# CORS Configuration
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 LLMWHISPERER_API_KEY = os.getenv("LLMWHISPERER_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -285,5 +297,6 @@ async def startup_event():
         print(f"  → {OPENAI_API_KEY[:8]}...{OPENAI_API_KEY[-4:]}")
     print(f"Model: gpt-4o")
     print(f"Timeout: 180s")
+    print(f"CORS Origins: {CORS_ORIGINS}")
     print("="*60 + "\n")
 

@@ -34,6 +34,12 @@ In Railway dashboard, go to your project → Variables tab and add:
 ```
 LLMWHISPERER_API_KEY=your_llmwhisperer_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
+CORS_ORIGINS=*
+```
+
+**For production, use specific origins:**
+```
+CORS_ORIGINS=https://yourfrontend.com,https://www.yourfrontend.com
 ```
 
 ### 4. Verify Deployment

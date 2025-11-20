@@ -18,10 +18,16 @@ FastAPI server that extracts and structures invoice line items from Excel/PDF fi
 pip install -r requirements.txt
 ```
 
-2. Create `.env` file:
+2. Create `.env` file (copy from `.env.example`):
 ```bash
 LLMWHISPERER_API_KEY=your_llmwhisperer_key
 OPENAI_API_KEY=your_openai_key
+CORS_ORIGINS=*
+```
+
+Or for specific origins:
+```bash
+CORS_ORIGINS=http://localhost:3000,https://yourdomain.com
 ```
 
 3. Run the server:
@@ -49,6 +55,7 @@ curl -X POST "http://localhost:8000/extract-invoice" \
 Configure these in Railway dashboard:
 - `LLMWHISPERER_API_KEY` - Your LLMWhisperer API key
 - `OPENAI_API_KEY` - Your OpenAI API key
+- `CORS_ORIGINS` - Allowed CORS origins (comma-separated) or `*` for all
 
 ### Deploy Steps
 
